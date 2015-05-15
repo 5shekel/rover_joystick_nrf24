@@ -1,15 +1,11 @@
 /**
-* control remote bot (based on  RF24 lib Example "LED Remote")
-*
-* This is an example of how to use the RF24 class to control a remote
-* bank of LED's using buttons on a remote control.
-* yair99@gmail.com
-*
+* control remote bot (based on  RF24 lib Example "http://maniacbug.github.io/RF24/led_remote_8pde-example.html")
+* This is an example of how to use the RF24 class to control a 2 DC motor bot
+* https://github.com/5shekel/rover_joystick_nrf24
 */
 
 
 #include <SPI.h>
-#include "nRF24L01.h"
 #include "RF24.h" //https://github.com/maniacbug/RF24
 #include "printf.h"
 #include <Bounce2.h> // https://github.com/thomasfredericks/Bounce-Arduino-Wiring
@@ -20,26 +16,15 @@ MotorDC  m1(6, 8, 13) ;
 MotorDC  m2(5, 7, 2, false);
 
 #define DEBUG_PONG 0
-//
-// Hardware configuration
-//
-
-// Set up nRF24L01 radio on SPI bus plus pins 9 & 8
-
 RF24 radio(9, 8);
+const int role_pin = 4;// sets the role of this unit in hardware.  Connect to GND to be the 'led' board receiver
 
-
-// sets the role of this unit in hardware.  Connect to GND to be the 'led' board receiver
-// Leave open to be the 'remote' transmitter
-const int role_pin = 4;
-
-
-//ping will transmit the data from A0,A1 and btn
 #define BTN_pin 7
 #define AX_pin A0
 #define AY_pin A1
 
 uint8_t snsVal[5]; //int>byte array (hi and low for anlog and one byte for btn) AX,AY,btn;
+const uint8_t size_snsVal = sizeof(snsVal);
 
 //motor pins
 #define MR_pin_0 10
@@ -56,22 +41,9 @@ int x2pwm, y2pwm ;
 boolean Xon, Yon; //is the joystick moving
 
 Bounce bouncer = Bounce();
-//
-// Topology
-//
 
 // Single radio pipe address for the 2 nodes to communicate.
 const uint64_t pipe = 0xE8E8F0F0E1LL;
-
-//
-// Role management
-//
-// Set up role.  This sketch uses the same software for all the nodes in this
-// system.  Doing so greatly simplifies testing.  The hardware itself specifies
-// which node it is.
-//
-// This is done through the role_pin
-//
 
 // The various roles supported by this sketch
 typedef enum { role_remote = 1, role_bot } role_e;
@@ -95,31 +67,19 @@ void setup(void)
   delay(20); // Just to get a solid reading on the role pin
 
   // read the address pin, establish our role
-  //if ( digitalRead(role_pin) )
-  //role = role_remote;
-  //else
+  if ( digitalRead(role_pin) )
+    role = role_remote;
+    else
   role = role_bot;
-
-  //
-  // Print preamble
-  //
 
   Serial.begin(57600);
   printf_begin();
   printf("\n\rYAWCB/\n\r");
   printf("ROLE: %s\n\r", role_friendly_name[role]);
 
-  //
-  // Setup and configure rf radio
-  //
-
   radio.begin();
 
-  //
-  // Open pipes to other nodes for communication
-  //
-
-  // This simple sketch opens a single pipes for these two nodes to communicate
+    // This simple sketch opens a single pipes for these two nodes to communicate
   // back and forth.  One listens on it, the other talks to it.
 
   if ( role == role_remote )
@@ -131,31 +91,19 @@ void setup(void)
     radio.openReadingPipe(1, pipe);
   }
 
-  //
-  // Start listening
-  //
-
-  if ( role == role_bot )
+  if ( role == role_bot )   // Start listening
     radio.startListening();
-
-
 
   radio.printDetails();// Dump the configuration of the rf unit for debugging
 
-  if ( role == role_remote )
-  {
-
+  if ( role == role_remote )  { //setup remote pins
     pinMode(AX_pin, INPUT);
     pinMode(AY_pin, INPUT);
     pinMode(BTN_pin, INPUT);
-    digitalWrite(BTN_pin, HIGH);
-
-  }
+    digitalWrite(BTN_pin, HIGH);  }
 
   // Turn DRV's off until we start getting data
-  if ( role == role_bot )
-  {
-
+  if ( role == role_bot )  {
     for (int i = 0; i < 4; i++)
     {
       //printf("i: %i\n\r",i);
@@ -170,17 +118,12 @@ void setup(void)
 
 }
 
-//
-// Loop
-//
-
 void loop(void)
 {
 
 
   if ( role == role_remote )
   {
-    // Update the debouncer
     bouncer.update();
 
     //read sensor values
@@ -193,7 +136,6 @@ void loop(void)
     snsVal[4] = bouncer.read();
 
     // now Send the state to bot
-
     printf("Now sending... ");
 
     bool ok = radio.write( snsVal, 5 );
@@ -218,7 +160,8 @@ void loop(void)
       while (!done)
       {
         // Fetch the payload, and see if this was the last one.
-        done = radio.read( snsVal, 5 );
+        done = radio.read( snsVal, size_snsVal );
+
 
         xout = word(snsVal[1], snsVal[0]);
         yout = word(snsVal[3], snsVal[2]);
@@ -240,58 +183,6 @@ void loop(void)
           Mcontrol('R', 0, 0);
         }
 
-        /*
-        if(yout < 495){
-        x2pwm = map(xout, 480, 0, 255,  50);
-        y2pwm = map(yout, 495, 0, 255,  50);
-        Mcontrol('F', y2pwm, x2pwm);
-        }
-        else if(yout>502){
-        x2pwm = map(xout, 485, 1024, 50,  255);
-        y2pwm = map(yout, 502, 1024, 50,  255);
-        Mcontrol('B', y2pwm, x2pwm);}
-        else{
-        Mcontrol('R',0, 0);
-        }
-        /*
-        //dir control
-        /*
-        if(!Yon){
-        if(xout<480){
-        Xon=1;
-        x2pwm = map(xout, 480, 0, 50,  255);
-        Mdir('L', x2pwm);
-        }
-        else if(xout>485){
-        Xon=1;
-        x2pwm = map(xout, 485, 1024, 50,  255);
-        Mdir('R', x2pwm);
-        }
-        else{
-        Xon=0;
-        Mdir('H',0);
-        }
-        }
-
-        //speed control
-        if(!Xon)
-        {
-        if(yout < 495){
-        Yon=1;
-        x2pwm = map(xout, 480, 0, 50,  255);
-        y2pwm = map(yout, 495, 0, 50,  255);
-        Mspeed('F', y2pwm);
-        }
-        else if(yout>502){
-        Yon=1;
-        y2pwm = map(yout, 502, 1024, 50,  255);
-        Mspeed('B', y2pwm);}
-        else{
-        Yon=0;
-        Mspeed('R',0);
-        }
-        }
-        */
         if (DEBUG_PONG)
         {
           // Spew it
