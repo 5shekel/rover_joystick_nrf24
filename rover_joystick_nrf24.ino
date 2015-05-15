@@ -7,6 +7,7 @@
 
 #include <SPI.h>
 #include "RF24.h" //https://github.com/maniacbug/RF24
+
 #include "printf.h"
 #include <Bounce2.h> // https://github.com/thomasfredericks/Bounce-Arduino-Wiring
 
@@ -16,14 +17,23 @@ MotorDC  m1(6, 8, 13) ;
 MotorDC  m2(5, 7, 2, false);
 
 #define DEBUG_PONG 0
+
 RF24 radio(9, 8);
 const int role_pin = 4;// sets the role of this unit in hardware.  Connect to GND to be the 'led' board receiver
+// Single radio pipe address for the 2 nodes to communicate.
+const uint64_t pipe = 0xE7E8F0F0E1LL;
+// The various roles supported by this sketch
+typedef enum { role_remote = 1, role_bot } role_e;
+// The debug-friendly names of those roles
+const char* role_friendly_name[] = { "invalid", "Remote", "driver"};
+role_e role;// The role of the current running sketch
+
 
 #define BTN_pin 7
 #define AX_pin A0
 #define AY_pin A1
 
-uint8_t snsVal[5]; //int>byte array (hi and low for anlog and one byte for btn) AX,AY,btn;
+uint8_t snsVal[] = {0,0,0,0,0}; //int>byte array (hi and low for anlog and one byte for btn) AX,AY,btn;
 const uint8_t size_snsVal = sizeof(snsVal);
 
 //motor pins
@@ -31,10 +41,8 @@ const uint8_t size_snsVal = sizeof(snsVal);
 #define MR_pin_1 3
 #define ML_pin_0 6
 #define ML_pin_1 5
+int drv_pins[] = {  MR_pin_0, MR_pin_1, ML_pin_0, ML_pin_1  };
 
-int drv_pins[] = {
-  MR_pin_0, MR_pin_1, ML_pin_0, ML_pin_1
-};
 #define num_drv_pins 4
 int xout, yout, btnout;
 int x2pwm, y2pwm ;
@@ -42,25 +50,8 @@ boolean Xon, Yon; //is the joystick moving
 
 Bounce bouncer = Bounce();
 
-// Single radio pipe address for the 2 nodes to communicate.
-const uint64_t pipe = 0xE8E8F0F0E1LL;
-
-// The various roles supported by this sketch
-typedef enum { role_remote = 1, role_bot } role_e;
-
-// The debug-friendly names of those roles
-const char* role_friendly_name[] = { "invalid", "Remote", "driver"};
-
-// The role of the current running sketch
-role_e role;
-
-
 void setup(void)
 {
-  //
-  // Role
-  //
-
   // set up the role pin
   pinMode(role_pin, INPUT);
   digitalWrite(role_pin, HIGH);
@@ -69,8 +60,8 @@ void setup(void)
   // read the address pin, establish our role
   if ( digitalRead(role_pin) )
     role = role_remote;
-    else
-  role = role_bot;
+  else
+    role = role_bot;
 
   Serial.begin(57600);
   printf_begin();
@@ -83,13 +74,9 @@ void setup(void)
   // back and forth.  One listens on it, the other talks to it.
 
   if ( role == role_remote )
-  {
     radio.openWritingPipe(pipe);
-  }
   else
-  {
     radio.openReadingPipe(1, pipe);
-  }
 
   if ( role == role_bot )   // Start listening
     radio.startListening();
@@ -120,8 +107,6 @@ void setup(void)
 
 void loop(void)
 {
-
-
   if ( role == role_remote )
   {
     bouncer.update();
