@@ -47,9 +47,9 @@ void setup(void)
 
   // read the address pin, establish our role
   if ( digitalRead(role_pin) )
-    role = role_remote;
+  role = role_remote;
   else
-    role = role_bot;
+  role = role_bot;
 
   Serial.begin(57600);
   Serial<<"\n\rYAWCB/\n\r ROLE:"<< role_friendly_name[role]<<endl;
@@ -60,17 +60,17 @@ void setup(void)
    radio.openWritingPipe(addresses[1]);
    radio.openReadingPipe(1,addresses[0]);
    radio.startListening();
-  }
+ }
 
   if ( role == role_remote )  { //setup remote pins
    radio.openWritingPipe(addresses[0]);
    radio.openReadingPipe(1,addresses[1]);
    radio.stopListening(); 
 
-    pinMode(AX_pin, INPUT);
-    pinMode(AY_pin, INPUT);
-    pinMode(BTN_pin, INPUT);
-    digitalWrite(BTN_pin, HIGH);  
+   pinMode(AX_pin, INPUT);
+   pinMode(AY_pin, INPUT);
+   pinMode(BTN_pin, INPUT);
+   digitalWrite(BTN_pin, HIGH);  
     // Bounce object with a 20 millisecond debounce time
     bouncer.attach(BTN_pin);
     bouncer.interval(20);
@@ -95,9 +95,9 @@ void loop(void)
     bool ok = radio.write(&snsVal, sizeof(snsVal));
     
     if(ok)
-      Serial<<"transfer OK  \n\r";
+    Serial<<"transfer OK  \n\r";
     else
-      Serial<<"transfer failed \n\r";
+    Serial<<"transfer failed \n\r";
   }
 
   if ( role == role_bot )
@@ -111,33 +111,39 @@ void loop(void)
       yout = word(snsVal[3], snsVal[2]);
       btnout = word(snsVal[4]);
 
-        if (yout > 495 && yout < 502) {
-          m1.stopMotor();
-          m2.stopMotor();
-          y2pwm = 0;
-        }else{
-          y2pwm = map(yout, 0, 1024, -100, 100);
-          x2pwm = map(xout, 0, 1024, -100, 100);
+      x2pwm = map(xout, 0, 1024, 100, -100);
+      y2pwm = map(yout, 0, 1024, 100, -100);
 
-          m1.setMotorSpeed(y2pwm - x2pwm);
-          m2.setMotorSpeed(y2pwm - x2pwm);
-          m1.startMotor();
-          m2.startMotor();
-        }
+      int leftMotor = constrain(y2pwm + x2pwm, -100, 100);
+      int rightMotor = constrain(y2pwm - x2pwm, -100, 100);
+
+      if (yout == 498 && (xout == 482 || xout == 481) ) {
+        m1.stopMotor();
+        m2.stopMotor();
+      }
+      else
+      {
+        m1.setMotorSpeed(leftMotor);
+        m2.setMotorSpeed(rightMotor);
+        m1.startMotor();
+        m2.startMotor();
+      }
 
       if (DEBUG_PONG)
-        {
+      {
           // Spew it
-          Serial<<"X> "<< xout<< " |Y> " << yout<< " |x2pwm> "<< x2pwm << " |y2pwm> " << y2pwm <<" |BTN> "<< btnout<< endl;
+          Serial<<"X> "<< xout<< " |Y> " << yout<< " |leftM> "<< leftMotor << " |rightM> " << rightMotor <<" |BTN> "<< btnout<<" |motorRunning> "<< m1.isMotorRunning() << endl;
           delay(4);
         }
+      }
     }
-
-
-
-      
-
-
   }
-}
 
+/*
+
+map for y is fwd == 100 bwd == -100
+map for x
+turn left
+  m1 == fwd+
+
+*/
