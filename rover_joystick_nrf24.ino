@@ -11,10 +11,11 @@
 
 #include "RF24.h" //http://tmrh20.github.io/ this is a manitned fork, the original is now radiohead
 #include <SPI.h>
-RF24 radio(9, 8);
+RF24 radio(9,8);
+
 const int role_pin = 4;// sets the role of this unit in hardware.  
 // The various roles supported by this sketch
-typedef enum { role_remote = 1, role_bot } role_e;
+typedef enum { role_remote, role_bot } role_e;
 // The debug-friendly names of those roles
 const char* role_friendly_name[] = { "invalid", "Remote", "Bot"};
 role_e role;// The role of the current running sketch
@@ -23,17 +24,25 @@ byte addresses[][6] = {"1Node","2Node"};
 #include <Bounce2.h> // https://github.com/thomasfredericks/Bounce-Arduino-Wiring
 #include "Streaming.h"
 
-#include "Motor.h" //http://sourceforge.net/projects/drv8833lib
 //motor pins
-Motor  m1(6, 5); //B1=6 B2=5 
-Motor  m2(10, 3); //A1=10 A2=3
+///////// motor /////////////
+int inApin[2] = {A1, A3};  // INA: Clockwise input
+int inBpin[2] = {A2, A4}; // INB: Counter-clockwise input
+int pwmpin[2] = {3, 6}; // PWM input
+#define stdbyMotorpin A5
 
 #define BTN_pin 7
+#define neck_down_pin 2
+#define neck_up_pin 3
 #define AX_pin A0
 #define AY_pin A1
 
-uint8_t snsVal[] = {0,0,0,0,0}; //int>byte array (hi and low for anlog and one byte for btn) AX,AY,btn;
-int xout, yout, btnout;
+struct dataStruct{
+  int xout;
+  int yout;
+  int btn;
+  int neck;
+}myData;
 int x2pwm, y2pwm ;
 
 Bounce bouncer = Bounce();
@@ -60,6 +69,17 @@ void setup(void)
    radio.openWritingPipe(addresses[1]);
    radio.openReadingPipe(1,addresses[0]);
    radio.startListening();
+
+  // Initialize motor pins as outputs
+  for (int i = 0; i < 2; i++)
+  {
+    pinMode(inApin[i], OUTPUT);
+    pinMode(inBpin[i], OUTPUT);
+    pinMode(pwmpin[i], OUTPUT);
+  }   
+    pinMode(stdbyMotorpin, OUTPUT);
+    digitalWrite(stdbyMotorpin, LOW);
+
  }
 
   if ( role == role_remote )  { //setup remote pins
@@ -70,7 +90,12 @@ void setup(void)
    pinMode(AX_pin, INPUT);
    pinMode(AY_pin, INPUT);
    pinMode(BTN_pin, INPUT);
-   digitalWrite(BTN_pin, HIGH);  
+   digitalWrite(BTN_pin, HIGH); 
+
+   pinMode(neck_up_pin, INPUT);
+   pinMode(neck_down_pin, INPUT);
+   digitalWrite(neck_up_pin, HIGH);  
+   digitalWrite(neck_down_pin, HIGH);  
     // Bounce object with a 20 millisecond debounce time
     bouncer.attach(BTN_pin);
     bouncer.interval(20);
@@ -83,16 +108,21 @@ void loop(void)
 {
   if ( role == role_remote )
   {
-    //read sensor values
+
+    myData.xout = analogRead(AX_pin);
+    myData.yout = analogRead(AY_pin);
     bouncer.update();
-    snsVal[0] = lowByte(analogRead(AX_pin));
-    snsVal[1] =  highByte(analogRead(AX_pin));
-    snsVal[2] = lowByte(analogRead(AY_pin));
-    snsVal[3] =  highByte(analogRead(AY_pin));;
-    snsVal[4] = bouncer.read();
+    myData.btn = bouncer.read();
+    
+    if(!digitalRead(neck_down_pin))
+      myData.neck = -1;
+    else if(!digitalRead(neck_up_pin))
+      myData.neck = 1;
+    else
+      myData.neck = 0;     
 
     // now Send the state to bot
-    bool ok = radio.write(&snsVal, sizeof(snsVal));
+    bool ok = radio.write(&myData, sizeof(myData));
     
     if(ok)
     Serial<<"transfer OK  \n\r";
@@ -105,45 +135,55 @@ void loop(void)
     if ( radio.available() )
     {
       while(radio.available()){
-        radio.read(&snsVal, sizeof(snsVal));
+        radio.read(&myData, sizeof(myData));
       }
-      xout = word(snsVal[1], snsVal[0]);
-      yout = word(snsVal[3], snsVal[2]);
-      btnout = word(snsVal[4]);
 
-      x2pwm = map(xout, 0, 1024, 100, -100);
-      y2pwm = map(yout, 0, 1024, 100, -100);
+      x2pwm = map(myData.xout, 0, 1024, 255, -255);
+      y2pwm = map(myData.yout, 0, 1024, 255, -255);
 
-      int leftMotor = constrain(y2pwm + x2pwm, -100, 100);
-      int rightMotor = constrain(y2pwm - x2pwm, -100, 100);
+      int leftMotor = constrain(y2pwm + x2pwm, -255, 255);
+      int rightMotor = constrain(y2pwm - x2pwm, -255, 255);
 
-      if (yout == 498 && (xout == 482 || xout == 481) ) {
-        m1.stopMotor();
-        m2.stopMotor();
+      if (myData.yout == 498 && (myData.xout == 482 || myData.xout == 481) ) {
+        //stop board from consuming power
+        digitalWrite(stdbyMotorpin, LOW);
       }
       else
       {
-        m1.setMotorSpeed(leftMotor);
-        m2.setMotorSpeed(rightMotor);
-        m1.startMotor();
-        m2.startMotor();
+        move(0, leftMotor);
+        move(1, rightMotor);
       }
 
       if (DEBUG_PONG)
       {
           // Spew it
-          Serial<<"X> "<< xout<< " |Y> " << yout<< " |leftM> "<< leftMotor << " |rightM> " << rightMotor <<" |BTN> "<< btnout<<" |motorRunning> "<< m1.isMotorRunning() << endl;
+          Serial
+          <<"X> "<< myData.xout
+          << " |Y> " << myData.yout
+          << " |leftM> " << leftMotor 
+          << " |rightM> " << rightMotor 
+          <<" |BTN> "<< myData.btn
+          <<" |neck> "<< myData.neck
+          << endl;
           delay(4);
         }
       }
     }
   }
 
-/*
+// motor functions
+void move(int motor, int speed) {
+      digitalWrite(stdbyMotorpin, HIGH);
+      if (speed < 0)
+        {
+        digitalWrite(inApin[motor], HIGH);
+        digitalWrite(inBpin[motor], LOW); 
+        }
+      else{ 
+        digitalWrite(inApin[motor], LOW);
+        digitalWrite(inBpin[motor], HIGH);
+      }
 
-map for y is fwd == 100 bwd == -100
-map for x
-turn left
-  m1 == fwd+
+      analogWrite(pwmpin[motor], abs(speed));
+}
 
-*/
