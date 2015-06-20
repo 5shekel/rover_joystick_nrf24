@@ -7,7 +7,7 @@
 * for clrifing the array sending see http://forum.arduino.cc/index.php?topic=260853.0
 */
 
-#define DEBUG_PONG 1
+#define DEBUG_PONG 0
 
 #include "RF24.h" //http://tmrh20.github.io/ this is a manitned fork, the original is now radiohead
 #include <SPI.h>
@@ -30,12 +30,19 @@ int inApin[2] = {A1, A3};  // INA: Clockwise input
 int inBpin[2] = {A2, A4}; // INB: Counter-clockwise input
 int pwmpin[2] = {3, 6}; // PWM input
 #define stdbyMotorpin A5
+/// neck pin
+#include <Servo.h>
+Servo neckServo;
+int neckPwmPin = 5;
 
 #define BTN_pin 7
 #define neck_down_pin 2
 #define neck_up_pin 3
 #define AX_pin A0
 #define AY_pin A1
+#define joystickNoise 10
+#define joystickXmid 482
+#define joystickYmid 498
 
 struct dataStruct{
   int xout;
@@ -79,6 +86,10 @@ void setup(void)
   }   
     pinMode(stdbyMotorpin, OUTPUT);
     digitalWrite(stdbyMotorpin, LOW);
+
+
+    neckServo.attach(neckPwmPin);
+    neckServo.write(68); 
 
  }
 
@@ -138,32 +149,55 @@ void loop(void)
         radio.read(&myData, sizeof(myData));
       }
 
+      //wheels motor control
       x2pwm = map(myData.xout, 0, 1024, 255, -255);
       y2pwm = map(myData.yout, 0, 1024, 255, -255);
-
       int leftMotor = constrain(y2pwm + x2pwm, -255, 255);
       int rightMotor = constrain(y2pwm - x2pwm, -255, 255);
 
-      if (myData.yout == 498 && (myData.xout == 482 || myData.xout == 481) ) {
-        //stop board from consuming power
-        digitalWrite(stdbyMotorpin, LOW);
-      }
-      else
-      {
+      //controller in rest has this values
+      //if (myData.yout == 498 && (myData.xout == 482 || myData.xout == 481) ) {
+      if (
+        (myData.yout > joystickYmid-joystickNoise && myData.yout < joystickYmid+joystickNoise)
+        && (myData.xout > joystickXmid-joystickNoise && myData.xout < joystickXmid+joystickNoise)
+        ){
+        digitalWrite(stdbyMotorpin, LOW);     //stop board from consuming power
+      }else{
+        Serial<<myData.xout<<" "<<myData.yout<<endl;
         move(0, leftMotor);
         move(1, rightMotor);
       }
+      //////////
 
+      /// neck control
+      switch (myData.neck) {
+          case -1:
+            neckServo.write(78);
+            break;
+          case 0:
+            neckServo.write(68);
+            break;
+          case 1:
+            neckServo.write(58);
+            break;
+      }
+      /////////////////
       if (DEBUG_PONG)
       {
-          // Spew it
-          Serial
-          <<"X> "<< myData.xout
-          << " |Y> " << myData.yout
-          << " |leftM> " << leftMotor 
-          << " |rightM> " << rightMotor 
-          <<" |BTN> "<< myData.btn
-          <<" |neck> "<< myData.neck
+          // Serial
+          // <<"X> "<< myData.xout
+          // << " |Y> " << myData.yout
+          // << " |leftM> " << leftMotor 
+          // << " |rightM> " << rightMotor 
+          // <<" |BTN> "<< myData.btn
+          // <<" |neck> "<< myData.neck
+          // << endl;
+          Serial <<
+          myData.xout
+          << " " << 
+          myData.yout
+          << " " << 
+          myData.neck
           << endl;
           delay(4);
         }
@@ -186,4 +220,5 @@ void move(int motor, int speed) {
 
       analogWrite(pwmpin[motor], abs(speed));
 }
+
 
