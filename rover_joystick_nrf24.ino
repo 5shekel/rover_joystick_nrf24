@@ -34,10 +34,12 @@ int pwmpin[2] = {3, 6}; // PWM input
 #include <Servo.h>
 Servo neckServo;
 int neckPwmPin = 5;
-
-#define BTN_pin 7
 #define neck_down_pin 2
 #define neck_up_pin 3
+#define neck_midpoint 68
+#define neck_speed 30
+
+#define BTN_pin 7
 #define AX_pin A0
 #define AY_pin A1
 #define joystickNoise 10
@@ -89,7 +91,7 @@ void setup(void)
 
 
     neckServo.attach(neckPwmPin);
-    neckServo.write(68); 
+    neckServo.write(neck_midpoint); 
 
  }
 
@@ -172,13 +174,13 @@ void loop(void)
       /// neck control
       switch (myData.neck) {
           case -1:
-            neckServo.write(78);
+            neckServo.write(neck_midpoint + neck_speed);
             break;
           case 0:
-            neckServo.write(68);
+            neckServo.write(neck_midpoint);
             break;
           case 1:
-            neckServo.write(58);
+            neckServo.write(neck_midpoint - neck_speed);
             break;
       }
       /////////////////
