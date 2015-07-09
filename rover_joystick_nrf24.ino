@@ -36,7 +36,7 @@ Servo neckServo;
 int neckPwmPin = 5;
 #define neck_down_pin 2
 #define neck_up_pin 3
-#define neck_midpoint 68
+#define neck_midpoint 69
 #define neck_speed 30
 
 #define BTN_pin 7
